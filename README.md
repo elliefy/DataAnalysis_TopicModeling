@@ -16,78 +16,70 @@ library(rmarkdown)</code></pre>
 
 Pre-Process data frames
 ----------------
-<p>1 - Load data and check the descriptions</p>
-<pre class="r"><code>storyURL <- read.csv("TrumpCovidTheHill.csv", header = TRUE, sep = ",")</code></pre>
-<p>2 - Get the necessary information: URLs</p>
-<pre class="r"><code>storyChar <- matrix(as.character(storyURL[ , 4]))</code></pre>
-<p>3 - Check the length of the vector</p>
-<pre class="r"><code>num <- length(storyURL[[1]])
-num</code></pre>
-<p>4 - Read the html codes.</p>
-<pre class="r"><code>xml <- try(apply(storyChar, 1, read_html))</code></pre>
+<pre class="r"><code>df <- read.csv("BidenFoxNBC.csv", header = TRUE, sep = ",")
+df$text <- as.character(df$text)
+df$source <- as.character(df$text)
+df_corpus <- corpus(df$text)
+docvars(df_corpus, "source") <- df$source
+metadoc(df_corpus, "language") <- "english"</code></pre>
 
-Inspect the html code you need to pull
+Clean text data
 ----------------
-<p>To see what parts of html code you need next, you can open a page and “inspect” the html code in Chrome.
+<pre class="r"><code>df_dfm <- dfm(df_corpus, remove = stopwords("en"), remove_punct = TRUE)
+#df_dfm
+df_dfm_trim <- dfm_trim(df_dfm, min_termfreq = 2, max_docfreq = 100)
+#df_dfm_trim</code></pre>
 
-Some tools make it easier. Here are some extensions that allow us to “point and click” specific part(s) of a website and identify the html code parts:
-
-For Chrome: "[SelectorGadget](https://selectorgadget.com/)"
-
-For Firefox: "[Page Inspector](https://developer.mozilla.org/en-US/docs/Tools/Page_Inspector)"
-
-For Safari: "[Web Inspector](https://www.technipages.com/macos-enable-web-inspector-in-safari)"</p>
-
-Scrape text from the html code
+Decide the number of topics (K)
 ----------------
-<p>First, let’s create a function to scrape text from The Hill</p>
-<pre class="r"><code>textScraper <- function(x) {
-  as.character(html_text(html_nodes (x, ".content-wrapper") %>% html_nodes("p"))) %>%
-    str_replace_all("[\n]", "") %>%
-    str_replace_all("    ", "") %>%
-    str_replace_all("[\t]", "") %>%
-    paste(collapse = '')}</code></pre>
-    
-Apply this function to our html content
+<pre class="r"><code>result <- FindTopicsNumber(df_dfm_trim, 
+                           topics = seq(from = 10, to = 20, by = 1),
+                           metrics = c("Griffiths2004", 
+                                       "CaoJuan2009", "Arun2010", 
+                                       "Deveaud2014"),
+                           method = "Gibbs", 
+                           control = list(seed = 123), 
+                           mc.cores = 2L, 
+                           verbose = TRUE)</code></pre>
+
+<pre class="r"><code>r# Validation
+n_topics <- c(5, 10, 15, 20)
+lda_compare <- n_topics %>% 
+  map(LDA, x = df_dfm_trim, control = list(seed = 123))
+data_frame(k = n_topics, 
+           perplex = map_dbl(lda_compare, perplexity)) %>% 
+  ggplot(aes(k, perplex)) + 
+  geom_point() + 
+  geom_line() + 
+  labs(title = "Evaluation for LDA topic modeling", 
+       x = "Number of topics", 
+       y = "Perplexity")</code></pre>
+
+Run LDA topic modeling
 ----------------
-<pre class="r"><code>articleText <- lapply(xml, textScraper) #list of article text
-articleText[[1]] # Or use head(articleText)</code></pre>
+<pre class="r"><code>k <- 20 # Number of topics
+control_LDA <- list(alpha = 50/k, estimate.beta = TRUE, 
+                    verbose = 0, prefix = tempfile(), 
+                    save = 0, keep = 0, 
+                    seed = 123, nstart = 1, 
+                    best = TRUE, delta = 0.1, iter = 2000, 
+                    burnin = 100, thin = 2000)
+lda = LDA(df_dfm_trim, k = k, method = "Gibbs", 
+          control = control_LDA)
+terms(lda, 10)</code></pre>
 
-Scrape time
+Visualization
 ----------------
-<p>Use similar methods to scrape the time for all the articles. We create another function timeScraper, and apply it to the html content.</p>
-<pre class="r"><code>timeScraper <- function(x) {
-  timestampHold <- as.character(html_text(html_nodes(x, ".submitted-date"))) %>% str_replace_all("[\n]", "")
-  matrix(unlist(timestampHold))
-  timestampHold[1]} 
-timestamp <- lapply(xml, timeScraper) #list of timestamps
-head(timestamp)</code></pre>
+<pre class="r"><code># Terms within each topic
+topics <- tidy(lda, matrix = "beta")
+top_terms <- topics %>% group_by(topic) %>% 
+  top_n(6, beta) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
 
-Output as a dataframe
-----------------
-<p>Create a dataframe for the text and time we scraped above</p>
-<pre class="r"><code>articleDF <- data.frame(storyID = as.character(storyURL[,1]), 
-                        headline = as.character(storyURL[,3]), 
-                        matrix(unlist(articleText), nrow = num), 
-                        matrix(unlist(timestamp), nrow = num), 
-                        themes = as.character(storyURL[,7]))
-names(articleDF)[3] <- 'text'
-names(articleDF)[4] <- 'time'
-#review the output
-#articleDF[1: 2, ]
-write.csv(articleDF, file = "TheHill_TrumpCovid_text.csv")</code></pre>
-
-Further readings
-----------------
-The official documentation for the package [`rvest`](https://cran.r-project.org/web/packages/rvest/rvest.pdf)
-
-[Simple web scraping for R in Github](https://github.com/tidyverse/rvest);
-
-[RStudio Blog: rvest: easy web scraping with R] (https://blog.rstudio.com/2014/11/24/rvest-easy-web-scraping-with-r/);
-
-Real-world applications: [Most popular films](https://www.analyticsvidhya.com/blog/2017/03/beginners-guide-on-web-scraping-in-r-using-rvest-with-hands-on-knowledge/), [Trip Advisor Reviews](https://www.johnlittle.info/project/custom/rfun-scrape/rvest_demo.nb.html), [IMDb pages](https://stat4701.github.io/edav/2015/04/02/rvest_tutorial/).
-
-
-
-
+top_terms %>% mutate(term = reorder(term, beta)) %>% 
+  ggplot(aes(term, beta, fill = factor(topic))) + 
+  geom_col(show.legend = FALSE) + 
+  facet_wrap(~ topic, scales = "free") + 
+  coord_flip()</code></pre>
 
