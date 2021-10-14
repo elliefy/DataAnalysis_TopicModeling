@@ -74,4 +74,4 @@ top_terms %>% mutate(term = reorder(term, beta)) %>%
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
   coord_flip()</code></pre>
-
+  <p align="center"><img src="Topics.png" width="650px"/></p>
