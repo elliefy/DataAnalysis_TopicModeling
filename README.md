@@ -4,31 +4,38 @@ LDA stands for Latent Dirichelet Allocation. LDA topic modeling is a computation
 
 Preparation - Install packages
 ----------------
-<pre class="r"><code>library(dplyr)
-library(quanteda)
+<pre class="r"><code>library(quanteda)
 library(topicmodels)
 library(ldatuning)
 library(dplyr)
 library(tidytext)
 library(tidyverse)
 library(ggplot2)
-library(rmarkdown)</code></pre>
+library(rmarkdown)
+library(ggthemes)
+library(scales)</code></pre>
 
-Pre-Process data frames
+Import Data
 ----------------
-<pre class="r"><code>df <- read.csv("BidenFoxNBC.csv", header = TRUE, sep = ",")
-df$text <- as.character(df$text)
-df$source <- as.character(df$text)
-df_corpus <- corpus(df$text)
-docvars(df_corpus, "source") <- df$source
-metadoc(df_corpus, "language") <- "english"</code></pre>
+<pre class="r"><code>distinct = read.csv("total_post.csv")
 
-Clean text data
+distinct = distinct%>%
+  mutate(fulltext = paste(title,post_text,sep = ""))%>%
+  select(-X)#combine title and post_text
+
+write.csv(distinct, "lda.csv",row.names = FALSE)
+
+df <- read.csv("lda.csv", header = TRUE, sep = ",")
+df$fulltext <- as.character(df$fulltext)
+df$subreddit <- as.character(df$subreddit)
+
+df_corpus <- corpus(df$fulltext)</code></pre>
+
+pre-process-remove stopwords, stemming
 ----------------
-<pre class="r"><code>df_dfm <- dfm(df_corpus, remove = stopwords("en"), remove_punct = TRUE)
-#df_dfm
-df_dfm_trim <- dfm_trim(df_dfm, min_termfreq = 2, max_docfreq = 100)
-#df_dfm_trim</code></pre>
+<pre class="r"><code>token = tokens(df_corpus,remove_punct = TRUE,remove_symbols = TRUE,remove_numbers = TRUE)
+df_dfm_raw <- dfm(token)
+stem = dfm_wordstem(df_dfm_raw)</code></pre>
 
 Decide the number of topics (K)
 ----------------
